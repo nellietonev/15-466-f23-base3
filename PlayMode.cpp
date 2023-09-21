@@ -90,7 +90,7 @@ PlayMode::PlayMode() : scene(*level1_scene) {
 	camera->transform->position.z -= 1.0f; // adding a bit of camera offset
 
 	row_size = 12;
-	block_row_left_anchor = glm::uvec3(0.0f);
+	block_row_left_anchor = glm::vec3(0.0f);
 
 	/* initial player position, separate from what's in blender */
 	player->position = block_base_transform.position + glm::vec3(0.0f, 0.0f, 1.0f);
