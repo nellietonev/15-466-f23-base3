@@ -26,7 +26,7 @@ struct PlayMode : Mode {
 	struct Button {
 		uint8_t downs = 0;
 		uint8_t pressed = 0;
-	} left, right, down, up;
+	} left, right, down, up, space;
 
 	/* used to determine how to move player and generate blocks */
 	enum Direction : size_t {
@@ -58,6 +58,8 @@ struct PlayMode : Mode {
 	//game mechanic-related values:
 	bool player_moving_horizontally;
 	bool player_jumping;
+	float target_player_height;
+	float vertical_offset;
 
 	glm::vec3 player_horizontal_target;
 	glm::vec3 player_distance_to_move;
@@ -78,7 +80,7 @@ struct PlayMode : Mode {
 	size_t longest_streak;
 
 	// game helper functions:
-	void GeneratePlatforms(bool is_initial_drawing, Direction new_direction);
+	void GeneratePlatforms(bool is_initial_drawing, Direction new_direction, float vertical_offset);
 	void DetermineSoundsForEachBlock();
 	void ResetPlayerPosition();
 };

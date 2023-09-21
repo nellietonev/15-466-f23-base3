@@ -36,13 +36,13 @@ Load< Scene > level1_scene(LoadTagDefault, []() -> Scene const * {
 	});
 });
 
-void PlayMode::GeneratePlatforms(bool is_initial_drawing, Direction new_direction) {
+void PlayMode::GeneratePlatforms(bool is_initial_drawing, Direction new_direction, float vertical_offset) {
 	for (size_t i = 0; i < row_size; i++) {
 		/* Lower row -- draw only if it is the first row or if direction is changing */
 		if ((is_initial_drawing || new_direction != direction) && i != 0) {
 			scene.transforms.emplace_back();
 			Scene::Transform &transform = scene.transforms.back();
-			transform.position = block_row_left_anchor + glm::vec3(0.0f, i, 0.0f);
+			transform.position = block_row_left_anchor + glm::vec3(0.0f, i, vertical_offset);
 
 			scene.drawables.emplace_back(&transform);
 			Scene::Drawable &drawable = scene.drawables.back();
@@ -52,7 +52,7 @@ void PlayMode::GeneratePlatforms(bool is_initial_drawing, Direction new_directio
 		{
 			scene.transforms.emplace_back();
 			Scene::Transform &transform = scene.transforms.back();
-			transform.position = block_row_left_anchor + glm::vec3(0.0f, i, 3.0f);
+			transform.position = block_row_left_anchor + glm::vec3(0.0f, i, vertical_offset + 3.0f);
 
 			scene.drawables.emplace_back(&transform);
 			Scene::Drawable &drawable = scene.drawables.back();
@@ -93,10 +93,13 @@ PlayMode::PlayMode() : scene(*level1_scene) {
 	block_row_left_anchor = glm::uvec3(0.0f);
 
 	/* initial player position, separate from what's in blender */
-	player->position = glm::uvec3(0.5f, 0.5f, 1.5f);
+	player->position = block_base_transform.position + glm::vec3(0.0f, 0.0f, 1.0f);
+	player_reset_position = player->position;
+	player_reset_rotation = player->rotation;
 
 	// draw in first 2 rows of platforms and set one block to have the good sound
-	GeneratePlatforms(true, South);
+	vertical_offset = 0.0f;
+	GeneratePlatforms(true, South, vertical_offset);
 	DetermineSoundsForEachBlock();
 }
 
@@ -105,10 +108,7 @@ PlayMode::~PlayMode() {
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
 	if (evt.type == SDL_KEYDOWN) {
-		if (evt.key.keysym.sym == SDLK_ESCAPE) {
-			SDL_SetRelativeMouseMode(SDL_FALSE);
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_a) {
+		if (evt.key.keysym.sym == SDLK_a) {
 			left.downs += 1;
 			left.pressed = true;
 			return true;
@@ -123,6 +123,10 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		} else if (evt.key.keysym.sym == SDLK_s) {
 			down.downs += 1;
 			down.pressed = true;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_SPACE) {
+			space.downs += 1;
+			space.pressed = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_q) {
 			set_current(nullptr);
@@ -141,23 +145,8 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		} else if (evt.key.keysym.sym == SDLK_s) {
 			down.pressed = false;
 			return true;
-		}
-	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
-		if (SDL_GetRelativeMouseMode() == SDL_FALSE) {
-			SDL_SetRelativeMouseMode(SDL_TRUE);
-			return true;
-		}
-	} else if (evt.type == SDL_MOUSEMOTION) {
-		if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
-			glm::vec2 motion = glm::vec2(
-				evt.motion.xrel / float(window_size.y),
-				-evt.motion.yrel / float(window_size.y)
-			);
-			camera->transform->rotation = glm::normalize(
-				camera->transform->rotation
-				* glm::angleAxis(-motion.x * camera->fovy, glm::vec3(0.0f, 1.0f, 0.0f))
-				* glm::angleAxis(motion.y * camera->fovy, glm::vec3(1.0f, 0.0f, 0.0f))
-			);
+		} else if (evt.key.keysym.sym == SDLK_SPACE) {
+			space.pressed = false;
 			return true;
 		}
 	}
@@ -169,6 +158,8 @@ void PlayMode::update(float elapsed) {
 	// move player
 	{
 		constexpr float player_speed_multiplier = 0.5f;
+		constexpr float player_jump_multiplier = 0.3f;
+		constexpr float distance_to_jump = 3.0f;
 
 		// TODO: change this based on the direction you are facing
 		if (player_moving_horizontally) {
@@ -186,21 +177,51 @@ void PlayMode::update(float elapsed) {
 		else if (!player_moving_horizontally && left.pressed && !right.pressed && player_block_index > 0) {
 			/* start movement to the left */
 			player_moving_horizontally = true;
-			player_horizontal_target = player->position - glm::vec3(0.0f, 1.0f, 0.0f);
+			player_horizontal_target = player->position + glm::vec3(0.0f, -1.0f * block_base_transform.scale.y, 0.0f);
 			player_distance_to_move = player_horizontal_target - player->position;
 			next_player_block_index = player_block_index - 1;
 		}
-		else if (!player_moving_horizontally && !left.pressed && right.pressed && player_block_index < row_size) {
+		else if (!player_moving_horizontally && !player_jumping && !left.pressed && right.pressed && player_block_index < row_size) {
 			/* start movement to the right */
 			player_moving_horizontally = true;
-			player_horizontal_target = player->position - glm::vec3(0.0f, -1.0f, 0.0f);
+			player_horizontal_target = player->position + glm::vec3(0.0f, block_base_transform.scale.y, 0.0f);
 			player_distance_to_move = player_horizontal_target - player->position;
 			next_player_block_index = player_block_index + 1;
 		}
 
-		// play the appropriate sound
-		if (up.pressed && !player_moving_horizontally && (current_sound_effect == nullptr || current_sound_effect->stopped)) {
+		// play the appropriate sound if the up button is clicked
+		if (up.pressed && !player_moving_horizontally && !player_jumping && (current_sound_effect == nullptr || current_sound_effect->stopped)) {
 			current_sound_effect = Sound::play((blocks_sound_vector[player_block_index] == 1) ? good_block_sound : bad_block_sound);
+		}
+
+		// logic for jumping to next platform
+		if (player_jumping) {
+			player->position.z += (3.0f * (elapsed / player_jump_multiplier));
+
+			/* allow for some epsilon/margin of not hitting the exact target position */
+			if (glm::epsilonEqual(player->position.z, target_player_height, 0.5f)) {
+				player_jumping = false;
+
+				if (blocks_sound_vector[player_block_index] == 1) {
+					player->position.z = target_player_height;
+					vertical_offset += 3.0f;
+					player_reset_position += glm::vec3(0.0f, 0.0f, 3.0f);
+					GeneratePlatforms(false, South, vertical_offset);
+					DetermineSoundsForEachBlock();
+					camera->transform->position.z = player->position.z - 0.5f;
+					current_streak += 1;
+					if (longest_streak < current_streak) longest_streak = current_streak;
+				} else {
+					Sound::play(oof_got_hit_sound);
+					ResetPlayerPosition();
+					current_streak = 0;
+				}
+			}
+		}
+		else if (space.pressed & !player_moving_horizontally && !player_jumping) {
+			/* start jumping */
+			player_jumping = true;
+			target_player_height = player->position.z + distance_to_jump;
 		}
 
 	}
@@ -210,6 +231,7 @@ void PlayMode::update(float elapsed) {
 	right.downs = 0;
 	up.downs = 0;
 	down.downs = 0;
+	space.downs = 0;
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -245,11 +267,11 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 		constexpr float H = 0.09f;
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
+		lines.draw_text("A and D moves player, click W to play sound, and SPACE to jump",
 			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
+		lines.draw_text("A and D moves player, click W to play sound, and SPACE to jump",
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
