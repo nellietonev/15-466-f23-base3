@@ -98,8 +98,8 @@ PlayMode::PlayMode() : scene(*level1_scene) {
 	player_reset_rotation = player->rotation;
 
 	// draw in first 2 rows of platforms and set one block to have the good sound
-	vertical_offset = 0.0f;
-	GeneratePlatforms(true, South, vertical_offset);
+	v_offset = 0.0f;
+	GeneratePlatforms(true, South, v_offset);
 	DetermineSoundsForEachBlock();
 }
 
@@ -204,9 +204,9 @@ void PlayMode::update(float elapsed) {
 
 				if (blocks_sound_vector[player_block_index] == 1) {
 					player->position.z = target_player_height;
-					vertical_offset += 3.0f;
+					v_offset += 3.0f;
 					player_reset_position += glm::vec3(0.0f, 0.0f, 3.0f);
-					GeneratePlatforms(false, South, vertical_offset);
+					GeneratePlatforms(false, South, v_offset);
 					DetermineSoundsForEachBlock();
 					camera->transform->position.z = player->position.z - 0.5f;
 					current_streak += 1;

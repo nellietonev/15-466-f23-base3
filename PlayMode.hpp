@@ -59,7 +59,7 @@ struct PlayMode : Mode {
 	bool player_moving_horizontally;
 	bool player_jumping;
 	float target_player_height;
-	float vertical_offset;
+	float v_offset;
 
 	glm::vec3 player_horizontal_target;
 	glm::vec3 player_distance_to_move;
