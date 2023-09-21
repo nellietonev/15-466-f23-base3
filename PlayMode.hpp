@@ -50,6 +50,7 @@ struct PlayMode : Mode {
 	Sound::Sample good_block_sound = Sound::Sample(data_path("good-block.wav"));
 	Sound::Sample bad_block_sound = Sound::Sample(data_path("bad-block.wav"));
 	Sound::Sample oof_got_hit_sound = Sound::Sample(data_path("oof.wav"));
+	std::shared_ptr< Sound::PlayingSample > current_sound_effect;
 	
 	//camera:
 	Scene::Camera *camera = nullptr;
@@ -57,11 +58,13 @@ struct PlayMode : Mode {
 	//game mechanic-related values:
 	bool player_moving_horizontally;
 	bool player_jumping;
-	std::vector<uint8_t> blocks_sound_vector;
+	std::vector<uint8_t> blocks_sound_vector; // for each block in row, if sound to play is good or bad
+	uint8_t player_block_index; // which block the player is standing under
 
-	glm::vec3 block_row_left_anchor;
+	glm::vec3 block_row_left_anchor; // transform for the bottom left of the leftmost block in row
 	uint8_t row_size;
 
 	// game helper functions:
-	void DrawPlatforms();
+	void GeneratePlatforms(bool is_initial_drawing, Direction new_direction);
+	void DetermineSoundsForEachBlock();
 };

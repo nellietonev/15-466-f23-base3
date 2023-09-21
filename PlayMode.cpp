@@ -9,6 +9,7 @@
 #include "data_path.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
+#include <stdlib.h>
 
 #include <random>
 
@@ -39,10 +40,10 @@ Load< Sound::Sample > dusty_floor_sample(LoadTagDefault, []() -> Sound::Sample c
 	return new Sound::Sample(data_path("dusty-floor.opus"));
 });
 
-void PlayMode::DrawPlatforms() {
+void PlayMode::GeneratePlatforms(bool is_initial_drawing, Direction new_direction) {
 	for (size_t i = 0; i < row_size; i++) {
-		/* Lower row */
-		if (i != 0) {
+		/* Lower row -- draw only if it is the first row or if direction is changing */
+		if ((is_initial_drawing || new_direction != direction) && i != 0) {
 			scene.transforms.emplace_back();
 			Scene::Transform &transform = scene.transforms.back();
 			transform.position = block_row_left_anchor + glm::vec3(0.0f, i, 0.0f);
@@ -64,6 +65,14 @@ void PlayMode::DrawPlatforms() {
 	}
 }
 
+void PlayMode::DetermineSoundsForEachBlock() {
+	blocks_sound_vector.clear();
+	uint8_t good_sound_index = rand() % row_size;
+	for (size_t i = 0; i < row_size; i++) {
+		blocks_sound_vector.push_back(i == good_sound_index ? 1 : 0);
+	}
+}
+
 PlayMode::PlayMode() : scene(*level1_scene) {
 	for (auto &drawable : scene.drawables) {
 		if (drawable.transform->name == "Player") player = drawable.transform;
@@ -82,8 +91,9 @@ PlayMode::PlayMode() : scene(*level1_scene) {
 	/* initial player position, separate from what's in blender */
 	player->position = glm::uvec3(0.5f, 0.5f, 1.5f);
 
-	// draw in first 2 rows of platforms
-	DrawPlatforms();
+	// draw in first 2 rows of platforms and set one block to have the good sound
+	GeneratePlatforms(true, South);
+	DetermineSoundsForEachBlock();
 }
 
 PlayMode::~PlayMode() {
@@ -160,6 +170,10 @@ void PlayMode::update(float elapsed) {
 		// TODO: change this based on the direction you are facing
 		if (left.pressed && !right.pressed) move.y = -1.0f;
 		if (!left.pressed && right.pressed) move.y = 1.0f;
+		if (up.pressed && (current_sound_effect == nullptr || current_sound_effect->stopped)) {
+			std::cout << "the current player sound vector is " << blocks_sound_vector[player_block_index];
+			current_sound_effect = Sound::play((blocks_sound_vector[player_block_index] == 1) ? good_block_sound : bad_block_sound);
+		}
 //		if (down.pressed && !up.pressed) move.y =-1.0f;
 //		if (!down.pressed && up.pressed) move.y = 1.0f;
 
