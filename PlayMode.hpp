@@ -58,13 +58,27 @@ struct PlayMode : Mode {
 	//game mechanic-related values:
 	bool player_moving_horizontally;
 	bool player_jumping;
+
+	glm::vec3 player_horizontal_target;
+	glm::vec3 player_distance_to_move;
+
 	std::vector<uint8_t> blocks_sound_vector; // for each block in row, if sound to play is good or bad
 	uint8_t player_block_index; // which block the player is standing under
+	uint8_t next_player_block_index;
 
 	glm::vec3 block_row_left_anchor; // transform for the bottom left of the leftmost block in row
 	uint8_t row_size;
 
+	// values to reset the player to when
+	glm::vec3 player_reset_position;
+	glm::quat player_reset_rotation;
+
+	// score system
+	size_t current_streak;
+	size_t longest_streak;
+
 	// game helper functions:
 	void GeneratePlatforms(bool is_initial_drawing, Direction new_direction);
 	void DetermineSoundsForEachBlock();
+	void ResetPlayerPosition();
 };

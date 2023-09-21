@@ -36,10 +36,6 @@ Load< Scene > level1_scene(LoadTagDefault, []() -> Scene const * {
 	});
 });
 
-Load< Sound::Sample > dusty_floor_sample(LoadTagDefault, []() -> Sound::Sample const * {
-	return new Sound::Sample(data_path("dusty-floor.opus"));
-});
-
 void PlayMode::GeneratePlatforms(bool is_initial_drawing, Direction new_direction) {
 	for (size_t i = 0; i < row_size; i++) {
 		/* Lower row -- draw only if it is the first row or if direction is changing */
@@ -67,10 +63,17 @@ void PlayMode::GeneratePlatforms(bool is_initial_drawing, Direction new_directio
 
 void PlayMode::DetermineSoundsForEachBlock() {
 	blocks_sound_vector.clear();
-	uint8_t good_sound_index = rand() % row_size;
+    uint8_t good_sound_index = rand() % row_size;
 	for (size_t i = 0; i < row_size; i++) {
-		blocks_sound_vector.push_back(i == good_sound_index ? 1 : 0);
+		blocks_sound_vector.push_back((i == good_sound_index) ? 1 : 0);
 	}
+}
+
+void PlayMode::ResetPlayerPosition() {
+	if (player == nullptr) return;
+	player->position = player_reset_position;
+	player->rotation = player_reset_rotation;
+	player_block_index = 0;
 }
 
 PlayMode::PlayMode() : scene(*level1_scene) {
@@ -84,6 +87,7 @@ PlayMode::PlayMode() : scene(*level1_scene) {
 	//get pointer to camera for convenience:
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
 	camera = &scene.cameras.front();
+	camera->transform->position.z -= 1.0f; // adding a bit of camera offset
 
 	row_size = 12;
 	block_row_left_anchor = glm::uvec3(0.0f);
@@ -107,12 +111,10 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		} else if (evt.key.keysym.sym == SDLK_a) {
 			left.downs += 1;
 			left.pressed = true;
-			player_moving_horizontally = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_d) {
 			right.downs += 1;
 			right.pressed = true;
-			player_moving_horizontally = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
 			up.downs += 1;
@@ -121,6 +123,9 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		} else if (evt.key.keysym.sym == SDLK_s) {
 			down.downs += 1;
 			down.pressed = true;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_q) {
+			set_current(nullptr);
 			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
@@ -163,31 +168,41 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 void PlayMode::update(float elapsed) {
 	// move player
 	{
-		//combine inputs into a move:
-		constexpr float PlayerSpeed = 5.0f;
-		glm::vec3 move = glm::vec3(0.0f);
+		constexpr float player_speed_multiplier = 0.5f;
 
 		// TODO: change this based on the direction you are facing
-		if (left.pressed && !right.pressed) move.y = -1.0f;
-		if (!left.pressed && right.pressed) move.y = 1.0f;
-		if (up.pressed && (current_sound_effect == nullptr || current_sound_effect->stopped)) {
-			std::cout << "the current player sound vector is " << blocks_sound_vector[player_block_index];
+		if (player_moving_horizontally) {
+			/* continue existing movement */
+			player->position += (player_distance_to_move * (elapsed / player_speed_multiplier));
+
+			/* allow for some epsilon/margin of not hitting the exact target position */
+			if (glm::all(glm::epsilonEqual(player->position, player_horizontal_target, 0.1f))) {
+				player_moving_horizontally = false;
+				player_block_index = next_player_block_index;
+				player->position = player_horizontal_target;
+			}
+		}
+		/* Note: Y-axis is flipped in the initial screen orientation */
+		else if (!player_moving_horizontally && left.pressed && !right.pressed && player_block_index > 0) {
+			/* start movement to the left */
+			player_moving_horizontally = true;
+			player_horizontal_target = player->position - glm::vec3(0.0f, 1.0f, 0.0f);
+			player_distance_to_move = player_horizontal_target - player->position;
+			next_player_block_index = player_block_index - 1;
+		}
+		else if (!player_moving_horizontally && !left.pressed && right.pressed && player_block_index < row_size) {
+			/* start movement to the right */
+			player_moving_horizontally = true;
+			player_horizontal_target = player->position - glm::vec3(0.0f, -1.0f, 0.0f);
+			player_distance_to_move = player_horizontal_target - player->position;
+			next_player_block_index = player_block_index + 1;
+		}
+
+		// play the appropriate sound
+		if (up.pressed && !player_moving_horizontally && (current_sound_effect == nullptr || current_sound_effect->stopped)) {
 			current_sound_effect = Sound::play((blocks_sound_vector[player_block_index] == 1) ? good_block_sound : bad_block_sound);
 		}
-//		if (down.pressed && !up.pressed) move.y =-1.0f;
-//		if (!down.pressed && up.pressed) move.y = 1.0f;
 
-		//make it so that moving diagonally doesn't go faster:
-		if (move != glm::vec3(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
-
-		player->position += move;
-	}
-
-	{ //update listener to camera position:
-		glm::mat4x3 frame = camera->transform->make_local_to_parent();
-		glm::vec3 frame_right = frame[0];
-		glm::vec3 frame_at = frame[3];
-		Sound::listener.set_position_right(frame_at, frame_right, 1.0f / 60.0f);
 	}
 
 	//reset button press counters:
@@ -239,29 +254,23 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 
-		// TODO: update to actually have the correct number instead of hardcoded
-		lines.draw_text("Current Streak: 0",
+		lines.draw_text("Current Streak: " + std::to_string((int)current_streak),
 						glm::vec3( -aspect + 0.1f * H, 1.75f + -1.0 + 0.1f * H, 0.0),
 						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 						glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-		lines.draw_text("Current Streak: 0",
+		lines.draw_text("Current Streak: " + std::to_string((int)current_streak),
 						glm::vec3(-aspect + 0.1f * H + ofs, 1.75f + -1.0 + 0.1f * H + ofs, 0.0),
 						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 						glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 
-		lines.draw_text("Longest Streak: 0",
+		lines.draw_text("Longest Streak: " + std::to_string((int)longest_streak),
 						glm::vec3( -aspect + 0.1f * H, 1.875f + -1.0 + 0.1f * H, 0.0),
 						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 						glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-		lines.draw_text("Longest Streak: 0",
+		lines.draw_text("Longest Streak: " + std::to_string((int)longest_streak),
 						glm::vec3(-aspect + 0.1f * H + ofs, 1.875f + -1.0 + 0.1f * H + ofs, 0.0),
 						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 						glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 	}
 	GL_ERRORS();
 }
-
-//glm::vec3 PlayMode::get_leg_tip_position() {
-//	//the vertex position here was read from the model in blender:
-//	return lower_leg->make_local_to_world() * glm::vec4(-1.26137f, -11.861f, 0.0f, 1.0f);
-//}

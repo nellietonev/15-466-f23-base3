@@ -111,6 +111,9 @@ int main(int argc, char **argv) {
 	//------------ load assets --------------
 	call_load_functions();
 
+	//------------ setting up random seed --------------
+	srand(std::time(nullptr));
+
 	//------------ create game mode + make current --------------
 	Mode::set_current(std::make_shared< PlayMode >());
 
