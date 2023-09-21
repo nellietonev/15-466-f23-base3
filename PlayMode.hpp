@@ -2,11 +2,14 @@
 
 #include "Scene.hpp"
 #include "Sound.hpp"
+#include "Load.hpp"
 
 #include <glm/glm.hpp>
+#include "data_path.hpp"
 
 #include <vector>
 #include <deque>
+#include <array>
 
 struct PlayMode : Mode {
 	PlayMode();
@@ -25,24 +28,40 @@ struct PlayMode : Mode {
 		uint8_t pressed = 0;
 	} left, right, down, up;
 
+	/* used to determine how to move player and generate blocks */
+	enum Direction : size_t {
+		South = 0,
+		East = 1,
+		North = 2,
+		West = 3,
+	};
+
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
 
-	//hexapod leg to wobble:
-	Scene::Transform *hip = nullptr;
-	Scene::Transform *upper_leg = nullptr;
-	Scene::Transform *lower_leg = nullptr;
-	glm::quat hip_base_rotation;
-	glm::quat upper_leg_base_rotation;
-	glm::quat lower_leg_base_rotation;
-	float wobble = 0.0f;
+	Scene::Drawable::Pipeline block_pipeline;
+	Scene::Transform block_base_transform;
+	Scene::Transform *player = nullptr;
 
-	glm::vec3 get_leg_tip_position();
+	// direction of the environment determines where platforms are spawned and direction player can move
+	Direction direction = South;
 
-	//music coming from the tip of the leg (as a demonstration):
-	std::shared_ptr< Sound::PlayingSample > leg_tip_loop;
+	//sound effects:
+	Sound::Sample good_block_sound = Sound::Sample(data_path("good-block.wav"));
+	Sound::Sample bad_block_sound = Sound::Sample(data_path("bad-block.wav"));
+	Sound::Sample oof_got_hit_sound = Sound::Sample(data_path("oof.wav"));
 	
 	//camera:
 	Scene::Camera *camera = nullptr;
 
+	//game mechanic-related values:
+	bool player_moving_horizontally;
+	bool player_jumping;
+	std::vector<uint8_t> blocks_sound_vector;
+
+	glm::vec3 block_row_left_anchor;
+	uint8_t row_size;
+
+	// game helper functions:
+	void DrawPlatforms();
 };
