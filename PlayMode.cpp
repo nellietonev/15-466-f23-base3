@@ -92,6 +92,9 @@ PlayMode::PlayMode() : scene(*level1_scene) {
 	row_size = 12;
 	block_row_left_anchor = glm::vec3(0.0f);
 
+	current_streak = 0;
+	longest_streak = 0;
+
 	/* initial player position, separate from what's in blender */
 	player->position = block_base_transform.position + glm::vec3(0.0f, 0.0f, 1.0f);
 	player_reset_position = player->position;
